@@ -1,4 +1,11 @@
-module WheelPicker exposing (..)
+module WheelPicker
+    exposing
+        (..
+         --  WheelPicker
+         -- , defaultWheelPicker
+         -- , update
+         -- , Msg(..)
+        )
 
 import BodyBuilder as Builder exposing (Node)
 import BodyBuilder.Attributes as Attributes
@@ -6,34 +13,39 @@ import Elegant exposing (px, vh, percent, Style, deg)
 import Style
 import Box
 import Block
-import Margin
+
+
+-- import Margin
+
 import Transform
 import Position
-import Flex
-import Padding
+
+
+-- import Flex
+-- import Padding
+
 import Typography
-import Constants
-import AnimationFrame
-import Time exposing (Time)
+
+
+-- import Constants
+
+import Time
 import Task
-import List.Extra
-import SingleTouch
+
+
+-- import List.Extra as List
+
 import Touch exposing (Coordinates)
 import BoundedList exposing (BoundedList)
-import Color
+
+
+-- import Color
+
 import Date exposing (Date)
 import Time exposing (Time)
-import List.Extra as List
 
 
 ---- CONSTANTS ----
-
-
-dayPickerLimits : { start : Int, end : Int }
-dayPickerLimits =
-    { start = 1544832000000
-    , end = 1547510400000
-    }
 
 
 defaultPickerFaces : Int
@@ -46,32 +58,14 @@ defaultPickerRadiusOut =
     150
 
 
-msInADay : number
-msInADay =
-    86400000
+touchesHistoryLength : Int
+touchesHistoryLength =
+    20
 
 
 
----- INIT ----
--- Picker
-
-
-initPicker : PickerId -> DataList -> Int -> Int -> Int -> Picker
-initPicker pickerId dataList faces radiusOut width =
-    Picker
-        { id = pickerId
-        , dataList = dataList
-        , faces = faces
-        , radiusOut = radiusOut
-        , width = width
-        , angle = 0
-        , state = Free ( 0, 0 )
-        }
-
-
-defaultPicker : PickerId -> Int -> DataList -> Picker
-defaultPicker pickerId width dataList =
-    initPicker pickerId dataList defaultPickerFaces defaultPickerRadiusOut width
+---- MODEL ----
+{- Sub-Models -}
 
 
 type alias DataList =
@@ -82,21 +76,42 @@ type alias Angle =
     Float
 
 
+type State
+    = Free
+    | Held
+
+
 type alias Speed =
-    -- px/ms
+    -- deg/ms
     Float
+
+
+type alias SpeedState =
+    -- ( ( t-1, t ), deg/ms )
+    ( ( Maybe Time, Time ), Speed )
 
 
 type alias MouseY =
     Float
 
 
-initTouchesHistory : Time -> MouseY -> Angle -> TouchesHistory
+initTouchesHistory : Time -> MouseY -> Angle -> Maybe TouchesHistory
 initTouchesHistory time mouseY angle =
-    { startMouseY = mouseY
-    , startAngle = angle
-    , touches = BoundedList.new 20 |> BoundedList.insert ( time, mouseY )
-    }
+    Just
+        { startMouseY = mouseY
+        , startAngle = angle
+        , touches = BoundedList.new touchesHistoryLength |> BoundedList.insert ( time, mouseY )
+        }
+
+
+addToTouchesHistory : ( Time, MouseY ) -> Maybe TouchesHistory -> Maybe TouchesHistory
+addToTouchesHistory touch maybeTouchesHistory =
+    case maybeTouchesHistory of
+        Nothing ->
+            Nothing
+
+        Just touchesHistory ->
+            Just { touchesHistory | touches = BoundedList.insert touch touchesHistory.touches }
 
 
 type alias TouchesHistory =
@@ -106,160 +121,88 @@ type alias TouchesHistory =
     }
 
 
-type State
-    = Free ( Time, Speed )
-    | Held TouchesHistory
+
+{- Model -}
 
 
-type PickerId
-    = DayPicker
-    | HourPicker
-    | MinutePicker
+setAngle : Angle -> WheelPicker -> WheelPicker
+setAngle angle ((WheelPicker picker) as wheelPicker) =
+    WheelPicker { picker | angle = angle }
 
 
-calculateAngle : Time -> Picker -> Picker
-calculateAngle currentTime (Picker picker) =
-    let
-        maxAngle =
-            (List.length picker.dataList |> toFloat) * (pickerAngleBetweenFaces picker.faces)
-
-        setLimit angle =
-            if angle < 0 then
-                0
-            else if angle > maxAngle then
-                maxAngle
-            else
-                angle
-
-        angleFromTouches touchesHistory =
-            touchesHistory.touches
-                |> BoundedList.content
-                |> List.take 2
-                |> (\list ->
-                        case list of
-                            ( _, mouseY ) :: xs ->
-                                touchesHistory.startAngle + 50 * (touchesHistory.startMouseY - mouseY) / (toFloat picker.radiusOut)
-
-                            _ ->
-                                picker.angle
-                   )
-                |> setLimit
-
-        angleFromInertia ( speed, previousTime ) =
-            0
-    in
-        case picker.state of
-            Free data ->
-                Picker picker
-                    |> setAngle (angleFromInertia data)
-
-            Held touchesHistory ->
-                Picker picker
-                    |> setAngle (angleFromTouches touchesHistory)
+setAngleFromTouches : WheelPicker -> WheelPicker
+setAngleFromTouches wheelPicker =
+    wheelPicker
+        |> setAngle (angleFromTouches wheelPicker)
+        |> applyLimitAngles
 
 
-setAngle : Angle -> Picker -> Picker
-setAngle angle (Picker picker) =
-    Picker { picker | angle = angle }
+setAngleFromSpeed : WheelPicker -> WheelPicker
+setAngleFromSpeed wheelPicker =
+    wheelPicker
+        |> setAngle (angleFromSpeed wheelPicker)
+        |> applyLimitAngles
 
 
-setState : State -> Picker -> Picker
-setState state (Picker picker) =
-    Picker { picker | state = state }
+setSpeedStateFromNewFrame : Time -> WheelPicker -> WheelPicker
+setSpeedStateFromNewFrame currentTime wheelPicker =
+    wheelPicker
+        |> setSpeedState (speedStateFromNewFrame currentTime wheelPicker)
 
 
-type Picker
-    = Picker
-        { id : PickerId
-        , dataList : DataList
+setSpeedStateFromTouches : WheelPicker -> WheelPicker
+setSpeedStateFromTouches wheelPicker =
+    wheelPicker
+        |> setSpeedState (speedStateFromTouches wheelPicker)
+
+
+getSpeedState : WheelPicker -> Maybe SpeedState
+getSpeedState (WheelPicker picker) =
+    picker.speedState
+
+
+setSpeedState : Maybe SpeedState -> WheelPicker -> WheelPicker
+setSpeedState speedState (WheelPicker picker) =
+    WheelPicker { picker | speedState = speedState }
+
+
+setTouchesHistory : Maybe TouchesHistory -> WheelPicker -> WheelPicker
+setTouchesHistory touchesHistory (WheelPicker picker) =
+    WheelPicker { picker | touchesHistory = touchesHistory }
+
+
+initWheelPicker : DataList -> Int -> Int -> Int -> WheelPicker
+initWheelPicker dataList faces radiusOut width =
+    WheelPicker
+        { dataList = dataList
+        , faces = faces
+        , radiusOut = radiusOut
+        , width = width
+        , angle = 0
+        , speedState = Nothing
+        , touchesHistory = Nothing
+        }
+
+
+defaultWheelPicker : Int -> DataList -> WheelPicker
+defaultWheelPicker width dataList =
+    initWheelPicker dataList defaultPickerFaces defaultPickerRadiusOut width
+
+
+type WheelPicker
+    = WheelPicker
+        { dataList : DataList
         , faces : Int
         , radiusOut : Int
         , width : Int
         , angle : Angle
-        , state : State
-
-        -- , activeItem : Date
+        , speedState : Maybe SpeedState
+        , touchesHistory : Maybe TouchesHistory
         }
-
-
-initDayPicker : Picker
-initDayPicker =
-    let
-        valueToDate value =
-            value
-                |> toFloat
-                |> Date.fromTime
-
-        valueToCouple value =
-            ( value
-            , String.join " " <|
-                [ value |> valueToDate |> Date.day |> toString
-                , value |> valueToDate |> Date.month |> toString
-                , value |> valueToDate |> Date.year |> toString
-                ]
-            )
-    in
-        dateRange dayPickerLimits.start dayPickerLimits.end
-            |> List.map valueToCouple
-            |> defaultPicker DayPicker 175
-
-
-initHourPicker : Picker
-initHourPicker =
-    let
-        valueToCouple value =
-            ( value, intToString 2 value )
-    in
-        List.range 0 23
-            |> List.map valueToCouple
-            |> defaultPicker HourPicker 60
-
-
-initMinutePicker : Picker
-initMinutePicker =
-    let
-        valueToCouple value =
-            ( value, intToString 2 value )
-    in
-        List.range 0 59
-            |> List.map valueToCouple
-            |> defaultPicker MinutePicker 60
-
-
-
--- Model
-
-
-setPicker : PickerId -> Picker -> Model -> Model
-setPicker pickerId picker model =
-    case pickerId of
-        DayPicker ->
-            { model | dayPicker = picker }
-
-        HourPicker ->
-            { model | hourPicker = picker }
-
-        MinutePicker ->
-            { model | minutePicker = picker }
-
-
-initModel : Model
-initModel =
-    { date = Nothing
-    , dayPicker = initDayPicker
-    , hourPicker = initHourPicker
-    , minutePicker = initMinutePicker
-    }
 
 
 
 ---- UPDATE ----
-
-
-type TouchState
-    = StartTouching
-    | HoldTouching
-    | StopTouching
 
 
 type GetTouchMsg
@@ -268,115 +211,104 @@ type GetTouchMsg
     | StopTouch Coordinates
 
 
-updateRecordingTouches : PickerId -> GetTouchMsg -> Model -> ( Model, Cmd Msg )
-updateRecordingTouches pickerId getTouchMsg model =
+updateGetTouch : GetTouchMsg -> WheelPicker -> ( WheelPicker, Cmd Msg )
+updateGetTouch getTouchMsg wheelPicker =
     let
         recordTouch mouseY touchState =
-            Task.perform ((pickerMsgConstructor pickerId) << RecordTouch mouseY touchState) Time.now
+            Task.perform (RecordTouch mouseY touchState) Time.now
     in
         case getTouchMsg of
             StartTouch { clientY } ->
-                ( model, recordTouch clientY StartTouching )
+                ( wheelPicker, recordTouch clientY StartTouching )
 
             HoldTouch { clientY } ->
-                ( model, recordTouch clientY HoldTouching )
+                ( wheelPicker, recordTouch clientY HoldTouching )
 
             StopTouch { clientY } ->
-                ( model, recordTouch clientY StopTouching )
+                ( wheelPicker, recordTouch clientY StopTouching )
 
 
-updateRecordTouchAt : PickerId -> MouseY -> TouchState -> Time -> Model -> ( Model, Cmd Msg )
-updateRecordTouchAt pickerId mouseY touchState time model =
-    let
-        (Picker picker) =
-            getPicker pickerId model
-
-        injectInModel newPicker =
-            setPicker pickerId newPicker model
-
-        newState =
-            case picker.state of
-                Held touchesHistory ->
-                    touchesHistory
-                        |> addToTouchesHistory ( time, mouseY )
-                        |> Held
-
-                _ ->
-                    Held (initTouchesHistory time mouseY picker.angle)
-    in
-        case touchState of
-            StartTouching ->
-                ( Picker picker
-                    |> setState newState
-                    |> injectInModel
-                , Cmd.none
-                )
-
-            HoldTouching ->
-                ( Picker picker
-                    |> setState newState
-                    |> calculateAngle time
-                    |> injectInModel
-                , Cmd.none
-                )
-
-            StopTouching ->
-                ( Picker picker
-                    |> setState newState
-                    |> calculateAngle time
-                    |> setState (releasePickerState picker.state)
-                    |> injectInModel
-                , Cmd.none
-                )
+type TouchState
+    = StartTouching
+    | HoldTouching
+    | StopTouching
 
 
-type PickerMsg
-    = GetTouch GetTouchMsg
-    | RecordTouch MouseY TouchState Time
+updateRecordTouch : MouseY -> TouchState -> Time -> WheelPicker -> ( WheelPicker, Cmd Msg )
+updateRecordTouch mouseY touchState currentTime (WheelPicker picker) =
+    case touchState of
+        StartTouching ->
+            (WheelPicker picker
+                |> setSpeedState Nothing
+                |> setTouchesHistory (initTouchesHistory currentTime mouseY picker.angle)
+            )
+                ! []
+
+        HoldTouching ->
+            ( WheelPicker picker
+                |> setTouchesHistory (addToTouchesHistory ( currentTime, mouseY ) picker.touchesHistory)
+                |> setAngleFromTouches
+            , Cmd.none
+            )
+
+        StopTouching ->
+            ( WheelPicker picker
+                |> setTouchesHistory (addToTouchesHistory ( currentTime, mouseY ) picker.touchesHistory)
+                |> setAngleFromTouches
+                |> setSpeedStateFromTouches
+                |> setTouchesHistory Nothing
+            , Cmd.none
+            )
 
 
-updatePicker : PickerId -> PickerMsg -> Model -> ( Model, Cmd Msg )
-updatePicker pickerId pickerMsg model =
-    case pickerMsg of
-        GetTouch getTouchMsg ->
-            updateRecordingTouches pickerId getTouchMsg model
-
-        RecordTouch mouseY touchState currentTime ->
-            updateRecordTouchAt pickerId mouseY touchState currentTime model
+updateNewFrame : Time -> WheelPicker -> ( WheelPicker, Cmd Msg )
+updateNewFrame currentTime (WheelPicker picker) =
+    (WheelPicker picker
+        |> setSpeedStateFromNewFrame currentTime
+        |> setAngleFromSpeed
+     -- case picker.speed of
+     --     Just ( _, 0 ) ->
+     --         (WheelPicker picker
+     --             |> setSpeed Nothing
+     --         )
+     --             ! []
+     --
+     --     _ ->
+    )
+        ! []
 
 
 type Msg
-    = DayPickerMsg PickerMsg
-    | HourPickerMsg PickerMsg
-    | MinutePickerMsg PickerMsg
+    = GetTouch GetTouchMsg
+    | RecordTouch MouseY TouchState Time
+    | NewFrame Time
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update : Msg -> WheelPicker -> ( WheelPicker, Cmd Msg )
+update msg wheelPicker =
     case msg of
-        DayPickerMsg pickerMsg ->
-            updatePicker DayPicker pickerMsg model
+        GetTouch getTouchMsg ->
+            updateGetTouch getTouchMsg wheelPicker
 
-        HourPickerMsg pickerMsg ->
-            updatePicker HourPicker pickerMsg model
+        RecordTouch mouseY touchState currentTime ->
+            updateRecordTouch mouseY touchState currentTime wheelPicker
 
-        MinutePickerMsg pickerMsg ->
-            updatePicker MinutePicker pickerMsg model
+        NewFrame currentTime ->
+            updateNewFrame currentTime wheelPicker
 
 
 
----- SUBSCRIPTIONS ----
 ---- VIEW ----
 
 
-pickerView : Picker -> List (Node msg)
-pickerView (Picker picker) =
+wheelPickerView : WheelPicker -> List (Node msg)
+wheelPickerView (WheelPicker picker) =
     let
-        faceHeight =
-            pickerFaceHeight picker.radiusOut picker.faces
+        pickerFaceHeight =
+            faceHeight picker.radiusOut picker.faces
 
         elementsToDrop faceIndex =
-            (((toFloat faceIndex) * (pickerAngleBetweenFaces picker.faces) + picker.angle) / (pickerAngleBetweenFaces picker.faces)) |> floor
+            (((toFloat faceIndex) * (angleBetweenFaces picker.faces) + picker.angle) / (angleBetweenFaces picker.faces)) |> floor
 
         selectionToString ( _, date, _ ) =
             String.join " " <|
@@ -389,14 +321,14 @@ pickerView (Picker picker) =
             Builder.div
                 [ Attributes.style
                     [ Style.blockProperties
-                        [ Block.height (px (round faceHeight))
+                        [ Block.height (px (round pickerFaceHeight))
                         , Block.width (px picker.width)
                         ]
                     , Style.box
-                        [ Box.position (Position.absolute [ Position.top (px ((toFloat picker.radiusOut) - 0.5 * faceHeight |> round)) ])
+                        [ Box.position (Position.absolute [ Position.top (px ((toFloat picker.radiusOut) - 0.5 * pickerFaceHeight |> round)) ])
                         , Box.transform
-                            [ Transform.rotateX (deg ((toFloat faceIndex) * (pickerAngleBetweenFaces picker.faces) |> negate))
-                            , Transform.translateZ (px (pickerRadiusIn picker.faces faceHeight |> round))
+                            [ Transform.rotateX (deg ((toFloat faceIndex) * (angleBetweenFaces picker.faces) |> negate))
+                            , Transform.translateZ (px (radiusIn picker.faces pickerFaceHeight |> round))
                             , Transform.backfaceVisibilityHidden
                             ]
                         ]
@@ -416,19 +348,16 @@ pickerView (Picker picker) =
         List.map pickerViewFace (List.range ((toFloat picker.faces) / 2 |> floor |> negate) ((toFloat picker.faces) / 2 |> floor))
 
 
-pickerContainerView : Picker -> Builder.FlexItem Msg
-pickerContainerView ((Picker picker) as pickerConstructor) =
+view : WheelPicker -> Node msg
+view ((WheelPicker picker) as wheelPicker) =
     let
-        faceHeight =
-            pickerFaceHeight picker.radiusOut picker.faces
+        pickerFaceHeight =
+            faceHeight picker.radiusOut picker.faces
 
-        fontSize =
-            pickerFontSize faceHeight
-
-        touchMsgWrapper =
-            (pickerMsgConstructor picker.id) << GetTouch
+        pickerFontSize =
+            fontSize pickerFaceHeight
     in
-        Builder.flexItem
+        Builder.div
             [ Attributes.style
                 [ Style.box
                     [ Box.transform
@@ -453,75 +382,131 @@ pickerContainerView ((Picker picker) as pickerConstructor) =
                             , Transform.translateZ (px (negate picker.radiusOut))
                             ]
                         , Box.typography
-                            [ Typography.size (px fontSize)
-                            , Typography.lineHeight (px (round faceHeight))
+                            [ Typography.size (px pickerFontSize)
+                            , Typography.lineHeight (px (round pickerFaceHeight))
                             ]
                         ]
                     ]
-                , Attributes.rawAttribute (SingleTouch.onStart (touchMsgWrapper << StartTouch))
-                , Attributes.rawAttribute (SingleTouch.onMove (touchMsgWrapper << HoldTouch))
-                , Attributes.rawAttribute (SingleTouch.onEnd (touchMsgWrapper << StopTouch))
                 ]
-                (pickerView pickerConstructor)
+                (wheelPickerView wheelPicker)
             ]
-
-
-view : Model -> Node Msg
-view model =
-    let
-        pickerLabel text =
-            Builder.flexItem
-                [ Attributes.style
-                    [ Style.box [ Box.typography [ Typography.size (px 31) ] ] ]
-                ]
-                [ Builder.text text ]
-    in
-        Builder.div
-            [ Attributes.style
-                [ Style.blockProperties [ Block.alignCenter ]
-                , Style.box [ Box.margin [ Margin.top <| Margin.width (px 200) ] ]
-                ]
-            ]
-            [ Builder.flex
-                [ Attributes.style
-                    [ Style.flexContainerProperties [ Flex.direction Flex.row, Flex.align Flex.alignCenter ] ]
-                ]
-                [ pickerContainerView model.dayPicker
-                , pickerLabel " at "
-                , pickerContainerView model.hourPicker
-                , pickerLabel ":"
-                , pickerContainerView model.minutePicker
-                ]
-            ]
-
-
-
----- MAIN ----
-
-
-main : Program Never Model Msg
-main =
-    Builder.program
-        { init = init
-        , update = update
-        , subscriptions = always Sub.none
-        , view = view
-        }
 
 
 
 ---- HELPERS ----
 
 
-releasePickerState : State -> State
-releasePickerState state =
+angleBetweenFaces : Int -> Float
+angleBetweenFaces facesNb =
+    360 / (toFloat facesNb)
+
+
+faceHeight : Int -> Int -> Float
+faceHeight pickerRadiusOut pickerFaces =
+    2 * (toFloat pickerRadiusOut) * sin (pi / (toFloat pickerFaces))
+
+
+radiusIn : Int -> Float -> Float
+radiusIn pickerFaces pickerFaceHeight =
+    pickerFaceHeight / (2 * tan (pi / (toFloat pickerFaces)))
+
+
+fontSize : Float -> Int
+fontSize pickerFaceHeight =
+    0.5 * pickerFaceHeight |> round
+
+
+degPerPx : Int -> Float
+degPerPx radius =
+    50 / (toFloat radius)
+
+
+applyLimitAngles : WheelPicker -> WheelPicker
+applyLimitAngles (WheelPicker picker) =
     let
-        calculateSpeedCouple ( lastState, firstState ) =
-            ( Tuple.first lastState
-            , if ((Tuple.first lastState) - (Tuple.first firstState)) > 500 then
+        maxAngle =
+            (List.length picker.dataList |> toFloat) * (angleBetweenFaces picker.faces)
+    in
+        if picker.angle < 0 then
+            WheelPicker picker
+                |> setAngle 0
+        else if picker.angle > maxAngle then
+            WheelPicker picker
+                |> setAngle maxAngle
+        else
+            WheelPicker picker
+
+
+angleFromTouches : WheelPicker -> Angle
+angleFromTouches (WheelPicker picker) =
+    let
+        newAngle touchesHistory =
+            touchesHistory.touches
+                |> BoundedList.content
+                |> List.take 2
+                |> (\list ->
+                        case list of
+                            ( _, mouseY ) :: xs ->
+                                touchesHistory.startAngle + (degPerPx picker.radiusOut) * (touchesHistory.startMouseY - mouseY)
+
+                            _ ->
+                                picker.angle
+                   )
+    in
+        case picker.touchesHistory of
+            Nothing ->
+                picker.angle
+
+            Just touchesHistory ->
+                newAngle touchesHistory
+
+
+angleFromSpeed : WheelPicker -> Angle
+angleFromSpeed (WheelPicker picker) =
+    case picker.speedState of
+        Nothing ->
+            picker.angle
+
+        Just ( ( maybePreviousTime, lastTime ), speed ) ->
+            case maybePreviousTime of
+                Nothing ->
+                    picker.angle
+
+                Just previousTime ->
+                    picker.angle + speed * (lastTime - previousTime)
+
+
+speedStateFromNewFrame : Time -> WheelPicker -> Maybe SpeedState
+speedStateFromNewFrame currentTime (WheelPicker picker) =
+    let
+        newSpeed ( ( _, previousTime ), previousSpeed ) =
+            -- 0.99 is the friction
+            -- 17 corresponds to 60 fps (1000 / 60 = 16.667)
+            previousSpeed * 0.99 ^ (round (currentTime - previousTime) % 17 |> toFloat)
+    in
+        case picker.speedState of
+            Nothing ->
+                Nothing
+
+            Just (( ( _, lastTime ), _ ) as speedState) ->
+                if abs (newSpeed speedState) < 0.05 then
+                    Nothing
+                else
+                    Just
+                        ( ( Just lastTime, currentTime )
+                        , newSpeed speedState
+                        )
+
+
+speedStateFromTouches : WheelPicker -> Maybe SpeedState
+speedStateFromTouches (WheelPicker picker) =
+    let
+        calculateSpeedCouple ( ( lastTime, lastMouseY ), ( firstTime, firstMouseY ) ) =
+            ( ( Nothing, lastTime )
+            , if (lastTime - firstTime) > 500 then
                 0
               else
-                ((Tuple.second lastState) - (Tuple.second firstState)) / ((Tuple.first lastState) - (Tuple.first firstState))
+                (degPerPx picker.radiusOut) * (firstMouseY - lastMouseY) / (lastTime - firstTime)
             )
 
         touchesSample touches =
@@ -535,101 +520,139 @@ releasePickerState state =
                 |> Maybe.withDefault ( 0, 0 )
             )
     in
-        case state of
-            Held touchesHistory ->
+        case picker.touchesHistory of
+            Nothing ->
+                Nothing
+
+            Just touchesHistory ->
                 touchesHistory.touches
                     |> touchesSample
                     |> calculateSpeedCouple
-                    |> Free
-
-            _ ->
-                state
+                    |> Just
 
 
-computeNewSpeed : Speed -> Time -> Time -> Speed
-computeNewSpeed speed currentTime lastTime =
-    speed * (0.99 ^ toFloat ((round (currentTime - lastTime)) % 17))
 
-
-insignificantSpeed : Speed -> Bool
-insignificantSpeed speed =
-    abs speed < 0.04
-
-
-addToTouchesHistory : ( Time, MouseY ) -> TouchesHistory -> TouchesHistory
-addToTouchesHistory touchCouple ({ touches } as touchesHistory) =
-    { touchesHistory | touches = BoundedList.insert touchCouple touches }
-
-
-pickerMsgConstructor : PickerId -> PickerMsg -> Msg
-pickerMsgConstructor pickerId =
-    case pickerId of
-        DayPicker ->
-            DayPickerMsg
-
-        HourPicker ->
-            HourPickerMsg
-
-        MinutePicker ->
-            MinutePickerMsg
-
-
-getPicker : PickerId -> Model -> Picker
-getPicker pickerId =
-    case pickerId of
-        DayPicker ->
-            .dayPicker
-
-        HourPicker ->
-            .hourPicker
-
-        MinutePicker ->
-            .minutePicker
-
-
-pickerAngleBetweenFaces : Int -> Float
-pickerAngleBetweenFaces facesNb =
-    360 / (toFloat facesNb)
-
-
-pickerFaceHeight : Int -> Int -> Float
-pickerFaceHeight pickerRadiusOut pickerFaces =
-    2 * (toFloat pickerRadiusOut) * sin (pi / (toFloat pickerFaces))
-
-
-pickerRadiusIn : Int -> Float -> Float
-pickerRadiusIn pickerFaces pickerFaceHeight =
-    pickerFaceHeight / (2 * tan (pi / (toFloat pickerFaces)))
-
-
-pickerFontSize : Float -> Int
-pickerFontSize pickerFaceHeight =
-    0.5 * pickerFaceHeight |> round
-
-
-intToString : Int -> a -> String
-intToString digitsNb value =
-    let
-        baseString =
-            toString value
-
-        additionalZeros =
-            baseString
-                |> String.length
-                |> (-) digitsNb
-                |> flip String.repeat "0"
-    in
-        String.append additionalZeros baseString
-
-
-dateRange_ : Int -> Int -> List Int -> List Int
-dateRange_ start end acc =
-    if start < end then
-        dateRange_ (start + msInADay) end (start :: acc)
-    else
-        acc
-
-
-dateRange : Int -> Int -> List Int
-dateRange start end =
-    dateRange_ start end []
+-- calculateAngle : WheelPicker -> Angle
+-- calculateAngle (WheelPicker picker) =
+--     let
+--
+--
+--         angleFromTouchesHistory touchesHistory =
+--
+--                    )
+--         angleFrom
+--     in
+--         case picker.state of
+--             Held ->
+--                 case picker.touchesHistory of
+--                     Nothing ->
+--                         picker.angle
+--
+--                     Just touchesHistory ->
+--                         touchesHistory
+--                             |> angleFromTouchesHistory
+--                             |> setLimit
+--
+--             Free ->
+--                 0
+-- ---- INIT ----
+--
+--
+-- initTouchesHistory : Time -> MouseY -> Angle -> TouchesHistory
+-- initTouchesHistory time mouseY angle =
+--     { startMouseY = mouseY
+--     , startAngle = angle
+--     , touches = BoundedList.new 20 |> BoundedList.insert ( time, mouseY )
+--     }
+--
+--
+--
+--
+--
+--
+-- -- Model
+--
+--
+-- setPicker : PickerId -> Picker -> Model -> Model
+-- setPicker pickerId picker model =
+--     case pickerId of
+--         DayPicker ->
+--             { model | dayPicker = picker }
+--
+--         HourPicker ->
+--             { model | hourPicker = picker }
+--
+--         MinutePicker ->
+--             { model | minutePicker = picker }
+--
+--
+-- ---- VIEW ----
+--
+--
+--
+--
+--
+-- ---- MAIN ----
+--
+--
+-- main : Program Never Model Msg
+-- main =
+--     Builder.program
+--         { init = init
+--         , update = update
+--         , subscriptions = always Sub.none
+--         , view = view
+--         }
+--
+--
+--
+-- ---- HELPERS ----
+--
+--
+--
+--
+-- computeNewSpeed : Speed -> Time -> Time -> Speed
+-- computeNewSpeed speed currentTime lastTime =
+--     speed * (0.99 ^ toFloat ((round (currentTime - lastTime)) % 17))
+--
+--
+-- insignificantSpeed : Speed -> Bool
+-- insignificantSpeed speed =
+--     abs speed < 0.04
+--
+--
+-- addToTouchesHistory : ( Time, MouseY ) -> TouchesHistory -> TouchesHistory
+-- addToTouchesHistory touchCouple ({ touches } as touchesHistory) =
+--     { touchesHistory | touches = BoundedList.insert touchCouple touches }
+--
+--
+-- pickerMsgConstructor : PickerId -> PickerMsg -> Msg
+-- pickerMsgConstructor pickerId =
+--     case pickerId of
+--         DayPicker ->
+--             DayPickerMsg
+--
+--         HourPicker ->
+--             HourPickerMsg
+--
+--         MinutePicker ->
+--             MinutePickerMsg
+--
+--
+-- getPicker : PickerId -> Model -> Picker
+-- getPicker pickerId =
+--     case pickerId of
+--         DayPicker ->
+--             .dayPicker
+--
+--         HourPicker ->
+--             .hourPicker
+--
+--         MinutePicker ->
+--             .minutePicker
+--
+--
+--
+--
+--
+--

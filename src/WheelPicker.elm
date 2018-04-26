@@ -472,7 +472,7 @@ speedStateToState (( _, speed ) as speedState) =
 
 updateAngle : WheelPicker -> WheelPicker
 updateAngle (WheelPicker picker) =
-    case picker.state of
+    (case picker.state of
         Free speedState ->
             WheelPicker picker
                 |> setAngle (angleFromSpeedState picker.angle speedState)
@@ -486,6 +486,8 @@ updateAngle (WheelPicker picker) =
 
         Stopped ->
             WheelPicker picker
+    )
+        |> applyLimitAngles
 
 
 angleFromTouchesHistory : Int -> Angle -> TouchesHistory -> Angle

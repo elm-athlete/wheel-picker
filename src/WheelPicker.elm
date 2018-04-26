@@ -276,7 +276,8 @@ wheelPickerView (WheelPicker picker) =
             faceHeight picker.radiusOut picker.faces
 
         elementsToDrop faceIndex =
-            (((toFloat faceIndex) * (angleBetweenFaces picker.faces) + picker.angle) / (angleBetweenFaces picker.faces)) |> floor
+            --((picker.angle + 180) / 360 |> floor) * picker.faces + faceIndex
+            ((picker.angle + 180 - (toFloat faceIndex) * (angleBetweenFaces picker.faces)) / 360 |> floor) * picker.faces + faceIndex
 
         selectionToString ( _, date, _ ) =
             String.join " " <|
@@ -312,7 +313,7 @@ wheelPickerView (WheelPicker picker) =
                         |> Builder.text
                 ]
     in
-        List.map pickerViewFace (List.range ((toFloat picker.faces) / 2 |> floor |> negate) ((toFloat picker.faces) / 2 |> floor))
+        List.map pickerViewFace (List.range 0 (picker.faces - 1))
 
 
 view : WheelPicker -> Node msg
@@ -328,7 +329,7 @@ view ((WheelPicker picker) as wheelPicker) =
             [ Attributes.style
                 [ Style.box
                     [ Box.transform
-                        [ Transform.perspective (px 1000)
+                        [ Transform.perspective (px 500)
                         , Transform.perspectiveOrigin ( percent 50, percent 50 )
                         , Transform.preserve3d
                         ]

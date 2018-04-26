@@ -265,6 +265,7 @@ dateRange_ start end acc =
 dateRange : Int -> Int -> List Int
 dateRange start end =
     dateRange_ start end []
+        |> List.reverse
 
 
 dateFromPickers : Model -> Date.Date

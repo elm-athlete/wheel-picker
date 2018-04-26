@@ -155,12 +155,10 @@ update msg model =
 
 pickerSubscriptions : PickerId -> Picker.WheelPicker -> Sub Msg
 pickerSubscriptions pickerId picker =
-    case Picker.getSpeedState picker of
-        Nothing ->
-            Sub.none
-
-        Just _ ->
-            AnimationFrame.times (PickerMsg pickerId << Picker.NewFrame)
+    if Picker.isAnimationFrameNeeded picker then
+        AnimationFrame.times (PickerMsg pickerId << Picker.NewFrame)
+    else
+        Sub.none
 
 
 subscriptions : Model -> Sub Msg

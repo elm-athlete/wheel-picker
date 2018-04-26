@@ -87,8 +87,9 @@ type alias Angle =
 
 
 type State
-    = Free
-    | Held
+    = Stopped
+    | Free SpeedState
+    | Held TouchesHistory
     | Approach
 
 
@@ -106,23 +107,24 @@ type alias MouseY =
     Float
 
 
-initTouchesHistory : Time -> MouseY -> Angle -> Maybe TouchesHistory
+initTouchesHistory : Time -> MouseY -> Angle -> TouchesHistory
 initTouchesHistory time mouseY angle =
-    Just
-        { startMouseY = mouseY
-        , startAngle = angle
-        , touches = BoundedList.new touchesHistoryLength |> BoundedList.insert ( time, mouseY )
-        }
+    { startMouseY = mouseY
+    , startAngle = angle
+    , touches = BoundedList.new touchesHistoryLength |> BoundedList.insert ( time, mouseY )
+    }
 
 
-addToTouchesHistory : ( Time, MouseY ) -> Maybe TouchesHistory -> Maybe TouchesHistory
-addToTouchesHistory touch maybeTouchesHistory =
-    case maybeTouchesHistory of
-        Nothing ->
-            Nothing
+addNewTouch : ( Time, MouseY ) -> WheelPicker -> WheelPicker
+addNewTouch touch (WheelPicker picker) =
+    case picker.state of
+        Held touchesHistory ->
+            { touchesHistory | touches = BoundedList.insert touch touchesHistory.touches }
+                |> Held
+                |> flip setState (WheelPicker picker)
 
-        Just touchesHistory ->
-            Just { touchesHistory | touches = BoundedList.insert touch touchesHistory.touches }
+        _ ->
+            WheelPicker picker
 
 
 type alias TouchesHistory =
@@ -141,51 +143,9 @@ setAngle angle ((WheelPicker picker) as wheelPicker) =
     WheelPicker { picker | angle = angle }
 
 
-setAngleFromTouches : WheelPicker -> WheelPicker
-setAngleFromTouches wheelPicker =
-    wheelPicker
-        |> setAngle (angleFromTouches wheelPicker)
-        |> applyLimitAngles
-
-
-setAngleFromSpeed : WheelPicker -> WheelPicker
-setAngleFromSpeed wheelPicker =
-    wheelPicker
-        |> detectApproach
-        |> setAngle (angleFromSpeed wheelPicker)
-        |> applyLimitAngles
-
-
-setSpeedStateFromNewFrame : Time -> WheelPicker -> WheelPicker
-setSpeedStateFromNewFrame currentTime wheelPicker =
-    wheelPicker
-        |> setSpeedState (speedStateFromNewFrame currentTime wheelPicker)
-
-
-setSpeedStateFromTouches : WheelPicker -> WheelPicker
-setSpeedStateFromTouches wheelPicker =
-    wheelPicker
-        |> setSpeedState (speedStateFromTouches wheelPicker)
-
-
-getSpeedState : WheelPicker -> Maybe SpeedState
-getSpeedState (WheelPicker picker) =
-    picker.speedState
-
-
-setSpeedState : Maybe SpeedState -> WheelPicker -> WheelPicker
-setSpeedState speedState (WheelPicker picker) =
-    WheelPicker { picker | speedState = speedState }
-
-
 setState : State -> WheelPicker -> WheelPicker
 setState state (WheelPicker picker) =
     WheelPicker { picker | state = state }
-
-
-setTouchesHistory : Maybe TouchesHistory -> WheelPicker -> WheelPicker
-setTouchesHistory touchesHistory (WheelPicker picker) =
-    WheelPicker { picker | touchesHistory = touchesHistory }
 
 
 getSelect : WheelPicker -> Int
@@ -206,9 +166,7 @@ initWheelPicker dataList faces radiusOut width =
         , faces = faces
         , radiusOut = radiusOut
         , select = 0
-        , speedState = Nothing
-        , state = Free
-        , touchesHistory = Nothing
+        , state = Stopped
         , width = width
         }
 
@@ -225,9 +183,7 @@ type WheelPicker
         , faces : Int
         , radiusOut : Int
         , select : Int
-        , speedState : Maybe SpeedState
         , state : State
-        , touchesHistory : Maybe TouchesHistory
         , width : Int
         }
 
@@ -270,26 +226,22 @@ updateRecordTouch mouseY touchState currentTime (WheelPicker picker) =
     case touchState of
         StartTouching ->
             (WheelPicker picker
-                |> setSpeedState Nothing
-                |> setTouchesHistory (initTouchesHistory currentTime mouseY picker.angle)
-                |> setState Held
+                |> setState (Held (initTouchesHistory currentTime mouseY picker.angle))
             )
                 ! []
 
         HoldTouching ->
             ( WheelPicker picker
-                |> setTouchesHistory (addToTouchesHistory ( currentTime, mouseY ) picker.touchesHistory)
-                |> setAngleFromTouches
+                |> addNewTouch ( currentTime, mouseY )
+                |> updateAngle
             , Cmd.none
             )
 
         StopTouching ->
             ( WheelPicker picker
-                |> setTouchesHistory (addToTouchesHistory ( currentTime, mouseY ) picker.touchesHistory)
-                |> setState Free
-                |> setSpeedStateFromTouches
-                |> setTouchesHistory Nothing
-                |> setAngleFromSpeed
+                |> addNewTouch ( currentTime, mouseY )
+                |> setStateWhenStopTouching
+                |> updateAngle
             , Cmd.none
             )
 
@@ -297,8 +249,8 @@ updateRecordTouch mouseY touchState currentTime (WheelPicker picker) =
 updateNewFrame : Time -> WheelPicker -> ( WheelPicker, Cmd Msg )
 updateNewFrame currentTime (WheelPicker picker) =
     (WheelPicker picker
-        |> setSpeedStateFromNewFrame currentTime
-        |> setAngleFromSpeed
+        |> setStateFromNewFrame currentTime
+        |> updateAngle
     )
         ! []
 
@@ -470,71 +422,45 @@ applyLimitAngles (WheelPicker picker) =
             WheelPicker picker
 
 
-angleFromTouches : WheelPicker -> Angle
-angleFromTouches (WheelPicker picker) =
-    let
-        newAngle touchesHistory =
-            touchesHistory.touches
-                |> BoundedList.content
-                |> List.take 2
-                |> (\list ->
-                        case list of
-                            ( _, mouseY ) :: xs ->
-                                touchesHistory.startAngle + (degPerPx picker.radiusOut) * (touchesHistory.startMouseY - mouseY)
+setStateWhenStopTouching : WheelPicker -> WheelPicker
+setStateWhenStopTouching (WheelPicker picker) =
+    case picker.state of
+        Held touchesHistory ->
+            newStateFromTouchesHistory picker.radiusOut touchesHistory
+                |> flip setState (WheelPicker picker)
 
-                            _ ->
-                                picker.angle
-                   )
-    in
-        case picker.touchesHistory of
-            Nothing ->
-                picker.angle
-
-            Just touchesHistory ->
-                newAngle touchesHistory
+        _ ->
+            WheelPicker picker
 
 
-speedStateFromNewFrame : Time -> WheelPicker -> Maybe SpeedState
-speedStateFromNewFrame currentTime (WheelPicker picker) =
-    let
-        newSpeed ( ( _, previousTime ), previousSpeed ) =
-            previousSpeed * friction ^ (currentTime - previousTime)
-    in
-        case picker.speedState of
-            Nothing ->
-                Nothing
+setStateFromNewFrame : Time -> WheelPicker -> WheelPicker
+setStateFromNewFrame currentTime (WheelPicker picker) =
+    case picker.state of
+        Free speedState ->
+            speedStateFromNewFrame currentTime speedState
+                |> speedStateToState
+                |> flip setState (WheelPicker picker)
 
-            Just (( ( _, lastTime ), _ ) as speedState) ->
-                Just
-                    ( ( Just lastTime, currentTime )
-                    , newSpeed speedState
-                    )
+        _ ->
+            WheelPicker picker
 
 
-angleFromSpeed : WheelPicker -> Angle
-angleFromSpeed (WheelPicker picker) =
-    case picker.speedState of
-        Nothing ->
-            picker.angle
-
-        Just ( ( maybePreviousTime, lastTime ), speed ) ->
-            case maybePreviousTime of
-                Nothing ->
-                    picker.angle
-
-                Just previousTime ->
-                    picker.angle + speed * (lastTime - previousTime)
+speedStateFromNewFrame : Time -> SpeedState -> SpeedState
+speedStateFromNewFrame currentTime ( ( _, previousTime ), previousSpeed ) =
+    ( ( Just previousTime, currentTime )
+    , previousSpeed * friction ^ (currentTime - previousTime)
+    )
 
 
-speedStateFromTouches : WheelPicker -> Maybe SpeedState
-speedStateFromTouches (WheelPicker picker) =
+newStateFromTouchesHistory : Int -> TouchesHistory -> State
+newStateFromTouchesHistory pickerRadius touchesHistory =
     let
         calculateSpeedState ( ( lastTime, lastMouseY ), ( firstTime, firstMouseY ) ) =
             ( ( Nothing, lastTime )
             , if (lastTime - firstTime) > 500 then
                 0
               else
-                (degPerPx picker.radiusOut) * (firstMouseY - lastMouseY) / (lastTime - firstTime)
+                (degPerPx pickerRadius) * (firstMouseY - lastMouseY) / (lastTime - firstTime)
             )
 
         touchesSample touches =
@@ -548,45 +474,79 @@ speedStateFromTouches (WheelPicker picker) =
                 |> Maybe.withDefault ( 0, 0 )
             )
     in
-        case picker.touchesHistory of
-            Nothing ->
-                Nothing
-
-            Just touchesHistory ->
-                touchesHistory.touches
-                    |> touchesSample
-                    |> calculateSpeedState
-                    |> Just
+        touchesHistory.touches
+            |> touchesSample
+            |> calculateSpeedState
+            |> speedStateToState
 
 
-detectApproach : WheelPicker -> WheelPicker
-detectApproach (WheelPicker picker) =
+speedStateToState : SpeedState -> State
+speedStateToState (( _, speed ) as speedState) =
+    if abs speed < approachSpeed then
+        Approach
+    else
+        Free speedState
+
+
+updateAngle : WheelPicker -> WheelPicker
+updateAngle (WheelPicker picker) =
     case picker.state of
-        Free ->
-            case picker.speedState of
-                Just ( times, speed ) ->
-                    if abs speed <= approachSpeed then
-                        WheelPicker picker
-                            |> setState Approach
-                            |> setSpeedState
-                                (if speed < 0 then
-                                    Just ( times, negate approachSpeed )
-                                 else
-                                    Just ( times, approachSpeed )
-                                )
-                    else
-                        WheelPicker picker
-
-                Nothing ->
-                    WheelPicker picker
-
-        _ ->
+        Free speedState ->
             WheelPicker picker
+                |> setAngle (angleFromSpeedState picker.angle speedState)
+
+        Held touchesHistory ->
+            WheelPicker picker
+                |> setAngle (angleFromTouchesHistory picker.radiusOut picker.angle touchesHistory)
+
+        Approach ->
+            WheelPicker picker
+
+        Stopped ->
+            WheelPicker picker
+
+
+angleFromTouchesHistory : Int -> Angle -> TouchesHistory -> Angle
+angleFromTouchesHistory pickerRadius currentAngle touchesHistory =
+    touchesHistory.touches
+        |> BoundedList.content
+        |> List.take 2
+        |> (\list ->
+                case list of
+                    ( _, mouseY ) :: xs ->
+                        touchesHistory.startAngle + (degPerPx pickerRadius) * (touchesHistory.startMouseY - mouseY)
+
+                    _ ->
+                        currentAngle
+           )
+
+
+angleFromSpeedState : Angle -> SpeedState -> Angle
+angleFromSpeedState currentAngle ( ( maybePreviousTime, lastTime ), speed ) =
+    case maybePreviousTime of
+        Nothing ->
+            currentAngle
+
+        Just previousTime ->
+            currentAngle + speed * (lastTime - previousTime)
 
 
 resolveSelect : WheelPicker -> Int
 resolveSelect (WheelPicker picker) =
     picker.angle / (angleBetweenFaces picker.faces) |> round
+
+
+isAnimationFrameNeeded : WheelPicker -> Bool
+isAnimationFrameNeeded (WheelPicker picker) =
+    case picker.state of
+        Held _ ->
+            False
+
+        Stopped ->
+            False
+
+        _ ->
+            True
 
 
 

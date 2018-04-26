@@ -11,7 +11,6 @@ import Flex
 import Margin
 import SingleTouch
 import Style
-import Task
 import Typography
 import WheelPicker as Picker
 
@@ -26,6 +25,7 @@ dayPickerLimits =
     }
 
 
+toMs : { day : Int, hour : Int, minute : Int }
 toMs =
     { day = 86400000
     , hour = 3600000

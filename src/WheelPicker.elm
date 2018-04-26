@@ -1,10 +1,13 @@
 module WheelPicker
     exposing
-        (..
-         --  WheelPicker
-         -- , defaultWheelPicker
-         -- , update
-         -- , Msg(..)
+        ( WheelPicker
+        , Msg(..)
+        , GetTouchMsg(..)
+        , update
+        , view
+        , defaultWheelPicker
+        , getSelect
+        , isAnimationFrameNeeded
         )
 
 import BodyBuilder as Builder exposing (Node)
@@ -13,34 +16,13 @@ import Elegant exposing (px, vh, percent, Style, deg)
 import Style
 import Box
 import Block
-
-
--- import Margin
-
 import Transform
 import Position
-
-
--- import Flex
--- import Padding
-
 import Typography
-
-
--- import Constants
-
 import Time
 import Task
-
-
--- import List.Extra as List
-
 import Touch exposing (Coordinates)
 import BoundedList exposing (BoundedList)
-
-
--- import Color
-
 import Date exposing (Date)
 import Time exposing (Time)
 
@@ -547,130 +529,3 @@ isAnimationFrameNeeded (WheelPicker picker) =
 
         _ ->
             True
-
-
-
--- calculateAngle : WheelPicker -> Angle
--- calculateAngle (WheelPicker picker) =
---     let
---
---
---         angleFromTouchesHistory touchesHistory =
---
---                    )
---         angleFrom
---     in
---         case picker.state of
---             Held ->
---                 case picker.touchesHistory of
---                     Nothing ->
---                         picker.angle
---
---                     Just touchesHistory ->
---                         touchesHistory
---                             |> angleFromTouchesHistory
---                             |> setLimit
---
---             Free ->
---                 0
--- ---- INIT ----
---
---
--- initTouchesHistory : Time -> MouseY -> Angle -> TouchesHistory
--- initTouchesHistory time mouseY angle =
---     { startMouseY = mouseY
---     , startAngle = angle
---     , touches = BoundedList.new 20 |> BoundedList.insert ( time, mouseY )
---     }
---
---
---
---
---
---
--- -- Model
---
---
--- setPicker : PickerId -> Picker -> Model -> Model
--- setPicker pickerId picker model =
---     case pickerId of
---         DayPicker ->
---             { model | dayPicker = picker }
---
---         HourPicker ->
---             { model | hourPicker = picker }
---
---         MinutePicker ->
---             { model | minutePicker = picker }
---
---
--- ---- VIEW ----
---
---
---
---
---
--- ---- MAIN ----
---
---
--- main : Program Never Model Msg
--- main =
---     Builder.program
---         { init = init
---         , update = update
---         , subscriptions = always Sub.none
---         , view = view
---         }
---
---
---
--- ---- HELPERS ----
---
---
---
---
--- computeNewSpeed : Speed -> Time -> Time -> Speed
--- computeNewSpeed speed currentTime lastTime =
---     speed * (0.99 ^ toFloat ((round (currentTime - lastTime)) % 17))
---
---
--- insignificantSpeed : Speed -> Bool
--- insignificantSpeed speed =
---     abs speed < 0.04
---
---
--- addToTouchesHistory : ( Time, MouseY ) -> TouchesHistory -> TouchesHistory
--- addToTouchesHistory touchCouple ({ touches } as touchesHistory) =
---     { touchesHistory | touches = BoundedList.insert touchCouple touches }
---
---
--- pickerMsgConstructor : PickerId -> PickerMsg -> Msg
--- pickerMsgConstructor pickerId =
---     case pickerId of
---         DayPicker ->
---             DayPickerMsg
---
---         HourPicker ->
---             HourPickerMsg
---
---         MinutePicker ->
---             MinutePickerMsg
---
---
--- getPicker : PickerId -> Model -> Picker
--- getPicker pickerId =
---     case pickerId of
---         DayPicker ->
---             .dayPicker
---
---         HourPicker ->
---             .hourPicker
---
---         MinutePicker ->
---             .minutePicker
---
---
---
---
---
---

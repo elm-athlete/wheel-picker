@@ -11,6 +11,7 @@ import Flex
 import Margin
 import SingleTouch
 import Style
+import Task
 import Typography
 import WheelPicker as Picker
 
@@ -25,9 +26,11 @@ dayPickerLimits =
     }
 
 
-msInADay : number
-msInADay =
-    86400000
+toMs =
+    { day = 86400000
+    , hour = 3600000
+    , minute = 60000
+    }
 
 
 
@@ -42,44 +45,48 @@ initDayPicker =
                 |> toFloat
                 |> Date.fromTime
 
-        valueToCouple value =
-            ( value
-            , String.join " " <|
-                [ value |> valueToDate |> Date.day |> toString
-                , value |> valueToDate |> Date.month |> toString
-                , value |> valueToDate |> Date.year |> toString
-                ]
-            )
+        valueToString value =
+            [ value |> valueToDate |> Date.day |> toString
+            , value |> valueToDate |> Date.month |> toString
+            , value |> valueToDate |> Date.year |> toString
+            ]
+                |> String.join " "
     in
         dateRange dayPickerLimits.start dayPickerLimits.end
-            |> List.map valueToCouple
+            |> List.map valueToString
             |> Picker.defaultWheelPicker 175
 
 
 initHourPicker : Picker.WheelPicker
 initHourPicker =
-    let
-        valueToCouple value =
-            ( value, intToString 2 value )
-    in
-        List.range 0 23
-            |> List.map valueToCouple
-            |> Picker.defaultWheelPicker 60
+    List.range 0 59
+        |> List.map (\value -> intToString 2 value)
+        |> Picker.defaultWheelPicker 60
 
 
 initMinutePicker : Picker.WheelPicker
 initMinutePicker =
-    let
-        valueToCouple value =
-            ( value, intToString 2 value )
-    in
-        List.range 0 59
-            |> List.map valueToCouple
-            |> Picker.defaultWheelPicker 60
+    List.range 0 59
+        |> List.map (\value -> intToString 2 value)
+        |> Picker.defaultWheelPicker 60
+
+
+setDate : Date.Date -> Model -> Model
+setDate date model =
+    { model | date = date }
+
+
+initialModel : Model
+initialModel =
+    { date = Date.fromTime 0
+    , dayPicker = initDayPicker
+    , hourPicker = initHourPicker
+    , minutePicker = initMinutePicker
+    }
 
 
 type alias Model =
-    { date : Maybe Date.Date
+    { date : Date.Date
     , dayPicker : Picker.WheelPicker
     , hourPicker : Picker.WheelPicker
     , minutePicker : Picker.WheelPicker
@@ -88,12 +95,10 @@ type alias Model =
 
 init : ( Model, Cmd Msg )
 init =
-    { date = Nothing
-    , dayPicker = initDayPicker
-    , hourPicker = initHourPicker
-    , minutePicker = initMinutePicker
-    }
-        ! []
+    ( initialModel
+        |> setDate (dateFromPickers initialModel)
+    , Cmd.none
+    )
 
 
 
@@ -114,16 +119,23 @@ updatePicker pickerId pickerMsg model =
     in
         case pickerId of
             DayPicker ->
-                { model | dayPicker = Tuple.first (updateSpecificPicker model.dayPicker) }
-                    ! [ Cmd.map (PickerMsg DayPicker) (Tuple.second (updateSpecificPicker model.dayPicker)) ]
+                ( { model | dayPicker = Tuple.first (updateSpecificPicker model.dayPicker) }
+                    |> setDate (Date.fromTime (1 * 86400000))
+                  -- (dateFromPickers initialModel)
+                , Cmd.map (PickerMsg DayPicker) (Tuple.second (updateSpecificPicker model.dayPicker))
+                )
 
             HourPicker ->
-                { model | hourPicker = Tuple.first (updateSpecificPicker model.hourPicker) }
-                    ! [ Cmd.map (PickerMsg HourPicker) (Tuple.second (updateSpecificPicker model.hourPicker)) ]
+                ( { model | hourPicker = Tuple.first (updateSpecificPicker model.hourPicker) }
+                    |> setDate (dateFromPickers initialModel)
+                , Cmd.map (PickerMsg HourPicker) (Tuple.second (updateSpecificPicker model.hourPicker))
+                )
 
             MinutePicker ->
-                { model | minutePicker = Tuple.first (updateSpecificPicker model.minutePicker) }
-                    ! [ Cmd.map (PickerMsg MinutePicker) (Tuple.second (updateSpecificPicker model.minutePicker)) ]
+                ( { model | minutePicker = Tuple.first (updateSpecificPicker model.minutePicker) }
+                    |> setDate (dateFromPickers initialModel)
+                , Cmd.map (PickerMsg MinutePicker) (Tuple.second (updateSpecificPicker model.minutePicker))
+                )
 
 
 type Msg
@@ -207,6 +219,7 @@ view model =
             , pickerLabelView ":"
             , pickerView MinutePicker model.minutePicker
             ]
+        , Builder.div [] [ Builder.text (toString model.date) ]
         ]
 
 
@@ -246,7 +259,7 @@ intToString digitsNb value =
 dateRange_ : Int -> Int -> List Int -> List Int
 dateRange_ start end acc =
     if start < end then
-        dateRange_ (start + msInADay) end (start :: acc)
+        dateRange_ (start + toMs.day) end (start :: acc)
     else
         acc
 
@@ -254,3 +267,20 @@ dateRange_ start end acc =
 dateRange : Int -> Int -> List Int
 dateRange start end =
     dateRange_ start end []
+
+
+dateFromPickers : Model -> Date.Date
+dateFromPickers model =
+    let
+        day =
+            Picker.getSelect model.dayPicker
+
+        hour =
+            Picker.getSelect model.hourPicker
+
+        minute =
+            Picker.getSelect model.minutePicker
+    in
+        (toMs.day * day + toMs.hour * hour + toMs.minute * minute)
+            |> toFloat
+            |> Date.fromTime

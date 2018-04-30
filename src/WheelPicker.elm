@@ -16,6 +16,7 @@ import Elegant exposing (px, vh, percent, Style, deg)
 import Style
 import Box
 import Block
+import Color
 import Transform
 import Position
 import Typography
@@ -276,7 +277,6 @@ wheelPickerView (WheelPicker picker) =
             faceHeight picker.radiusOut picker.faces
 
         elementsToDrop faceIndex =
-            --((picker.angle + 180) / 360 |> floor) * picker.faces + faceIndex
             ((picker.angle + 180 - (toFloat faceIndex) * (angleBetweenFaces picker.faces)) / 360 |> floor) * picker.faces + faceIndex
 
         selectionToString ( _, date, _ ) =
@@ -285,6 +285,12 @@ wheelPickerView (WheelPicker picker) =
                 , toString (Date.month date)
                 , toString (Date.year date)
                 ]
+
+        faceColorOpacity faceIndex =
+            if ((elementsToDrop faceIndex |> toFloat) - picker.angle) >= 80 then
+                0
+            else
+                (80 - ((elementsToDrop faceIndex |> toFloat) * 24 - picker.angle |> abs)) / 80
 
         pickerViewFace faceIndex =
             Builder.div
@@ -300,6 +306,11 @@ wheelPickerView (WheelPicker picker) =
                             , Transform.translateZ (px (radiusIn picker.faces pickerFaceHeight |> round))
                             , Transform.backfaceVisibilityHidden
                             ]
+                        , (if (elementsToDrop faceIndex - picker.select) == 0 then
+                            Box.textColor <| Color.rgb 0 0 0
+                           else
+                            Box.textColor <| Color.rgba 180 180 180 (faceColorOpacity faceIndex)
+                          )
                         ]
                     ]
                 ]

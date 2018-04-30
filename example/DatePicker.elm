@@ -20,8 +20,8 @@ import WheelPicker as Picker
 
 dayPickerLimits : { start : Int, end : Int }
 dayPickerLimits =
-    { start = 1544832000000
-    , end = 1547510400000
+    { start = 1544828400000
+    , end = 1547506800000
     }
 
 
@@ -120,20 +120,19 @@ updatePicker pickerId pickerMsg model =
         case pickerId of
             DayPicker ->
                 ( { model | dayPicker = Tuple.first (updateSpecificPicker model.dayPicker) }
-                    |> setDate (Date.fromTime (1 * 86400000))
-                  -- (dateFromPickers initialModel)
+                    |> setDate (dateFromPickers model)
                 , Cmd.map (PickerMsg DayPicker) (Tuple.second (updateSpecificPicker model.dayPicker))
                 )
 
             HourPicker ->
                 ( { model | hourPicker = Tuple.first (updateSpecificPicker model.hourPicker) }
-                    |> setDate (dateFromPickers initialModel)
+                    |> setDate (dateFromPickers model)
                 , Cmd.map (PickerMsg HourPicker) (Tuple.second (updateSpecificPicker model.hourPicker))
                 )
 
             MinutePicker ->
                 ( { model | minutePicker = Tuple.first (updateSpecificPicker model.minutePicker) }
-                    |> setDate (dateFromPickers initialModel)
+                    |> setDate (dateFromPickers model)
                 , Cmd.map (PickerMsg MinutePicker) (Tuple.second (updateSpecificPicker model.minutePicker))
                 )
 
@@ -199,6 +198,20 @@ pickerLabelView text =
         ]
 
 
+dateView : Date.Date -> String
+dateView date =
+    "Selected: "
+        |> flip (++) (Date.day date |> toString)
+        |> flip (++) " "
+        |> flip (++) (Date.month date |> toString)
+        |> flip (++) " "
+        |> flip (++) (Date.year date |> toString)
+        |> flip (++) " at "
+        |> flip (++) (intToString 2 (Date.hour date))
+        |> flip (++) ":"
+        |> flip (++) (intToString 2 (Date.minute date))
+
+
 view : Model -> Node Msg
 view model =
     Builder.div
@@ -217,7 +230,7 @@ view model =
             , pickerLabelView ":"
             , pickerView MinutePicker model.minutePicker
             ]
-        , Builder.div [] [ Builder.text (toString model.date) ]
+        , Builder.div [] [ Builder.text (dateView model.date) ]
         ]
 
 
@@ -280,6 +293,6 @@ dateFromPickers model =
         minute =
             Picker.getSelect model.minutePicker
     in
-        (toMs.day * day + toMs.hour * hour + toMs.minute * minute)
+        (dayPickerLimits.start + toMs.day * day + toMs.hour * hour + toMs.minute * minute)
             |> toFloat
             |> Date.fromTime

@@ -290,7 +290,7 @@ wheelPickerView (WheelPicker picker) =
             if ((elementsToDrop faceIndex |> toFloat) - picker.angle) >= 80 then
                 0
             else
-                (80 - ((elementsToDrop faceIndex |> toFloat) * 24 - picker.angle |> abs)) / 80
+                (80 - ((elementsToDrop faceIndex |> toFloat) * (angleBetweenFaces picker.faces) - picker.angle |> abs)) / 80
 
         pickerViewFace faceIndex =
             Builder.div

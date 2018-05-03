@@ -477,7 +477,7 @@ newStateFromTouchesHistory pickerRadius touchesHistory =
 speedStateToState : SpeedState -> State
 speedStateToState (( _, speed ) as speedState) =
     if abs speed < approachSpeed then
-        Approach
+        Stopped
     else
         Free speedState
 

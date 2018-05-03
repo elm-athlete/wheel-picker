@@ -53,7 +53,8 @@ approachSpeed =
 
 friction : Float
 friction =
-    0.997
+    -- deg/ms^2
+    0.0006
 
 
 
@@ -442,7 +443,7 @@ setStateFromNewFrame currentTime (WheelPicker picker) =
 speedStateFromNewFrame : Time -> SpeedState -> SpeedState
 speedStateFromNewFrame currentTime ( ( _, previousTime ), previousSpeed ) =
     ( ( Just previousTime, currentTime )
-    , previousSpeed * friction ^ (currentTime - previousTime)
+    , previousSpeed - friction * (currentTime - previousTime)
     )
 
 

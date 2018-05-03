@@ -200,8 +200,7 @@ pickerLabelView text =
 
 dateView : Date.Date -> String
 dateView date =
-    "Selected: "
-        |> flip (++) (Date.day date |> toString)
+    (Date.day date |> toString)
         |> flip (++) " "
         |> flip (++) (Date.month date |> toString)
         |> flip (++) " "
@@ -230,7 +229,15 @@ view model =
             , pickerLabelView ":"
             , pickerView MinutePicker model.minutePicker
             ]
-        , Builder.div [] [ Builder.text (dateView model.date) ]
+        , Builder.div
+            [ Attributes.style
+                [ Style.box
+                    [ Box.margin [ Margin.top <| Margin.width (px 20) ]
+                    , Box.typography [ Typography.size (px 30) ]
+                    ]
+                ]
+            ]
+            [ Builder.text ("Selected: " ++ (dateView model.date)) ]
         ]
 
 

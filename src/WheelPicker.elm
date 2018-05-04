@@ -408,9 +408,11 @@ applyLimitAngles (WheelPicker picker) =
         if picker.angle < 0 then
             WheelPicker picker
                 |> setAngle 0
+                |> setState Stopped
         else if picker.angle > maxAngle then
             WheelPicker picker
                 |> setAngle maxAngle
+                |> setState Stopped
         else
             WheelPicker picker
 

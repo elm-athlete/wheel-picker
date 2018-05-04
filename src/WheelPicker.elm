@@ -46,11 +46,6 @@ touchesHistoryLength =
     20
 
 
-approachSpeed : Float
-approachSpeed =
-    0.05
-
-
 friction : Float
 friction =
     -- deg/ms^2
@@ -83,8 +78,11 @@ type alias Speed =
 
 
 type alias SpeedState =
-    -- ( ( t-1, t ), deg/ms )
-    ( ( Maybe Time, Time ), Speed )
+    { previousTime : Maybe Time
+    , lastTime : Time
+    , direction : Float
+    , speed : Speed
+    }
 
 
 type alias MouseY =
@@ -441,22 +439,38 @@ setStateFromNewFrame currentTime (WheelPicker picker) =
 
 
 speedStateFromNewFrame : Time -> SpeedState -> SpeedState
-speedStateFromNewFrame currentTime ( ( _, previousTime ), previousSpeed ) =
-    ( ( Just previousTime, currentTime )
-    , previousSpeed - friction * (currentTime - previousTime)
-    )
+speedStateFromNewFrame currentTime speedState =
+    let
+        newSpeedState speed =
+            { previousTime = (Just speedState.lastTime)
+            , lastTime = currentTime
+            , direction = speedState.direction
+            , speed = speed
+            }
+    in
+        case speedState.previousTime of
+            Nothing ->
+                newSpeedState speedState.speed
+
+            Just previousTime ->
+                newSpeedState (speedState.speed - friction * (currentTime - previousTime))
 
 
 newStateFromTouchesHistory : Int -> TouchesHistory -> State
 newStateFromTouchesHistory pickerRadius touchesHistory =
     let
-        calculateSpeedState ( ( lastTime, lastMouseY ), ( firstTime, firstMouseY ) ) =
-            ( ( Nothing, lastTime )
-            , if (lastTime - firstTime) > 500 then
-                0
-              else
-                (degPerPx pickerRadius) * (firstMouseY - lastMouseY) / (lastTime - firstTime)
-            )
+        roundSpeedState speedState =
+            speedState
+
+        calculateSpeedState (( ( lastTime, _ ), _ ) as speedState) =
+            { previousTime = Nothing
+            , lastTime = lastTime
+            , direction = (speed speedState) / (abs (speed speedState))
+            , speed = abs (speed speedState)
+            }
+
+        speed ( ( lastTime, lastMouseY ), ( firstTime, firstMouseY ) ) =
+            (degPerPx pickerRadius) * (firstMouseY - lastMouseY) / (lastTime - firstTime)
 
         touchesSample touches =
             ( touches
@@ -472,12 +486,13 @@ newStateFromTouchesHistory pickerRadius touchesHistory =
         touchesHistory.touches
             |> touchesSample
             |> calculateSpeedState
-            |> speedStateToState
+            |> roundSpeedState
+            |> Free
 
 
 speedStateToState : SpeedState -> State
-speedStateToState (( _, speed ) as speedState) =
-    if abs speed < approachSpeed then
+speedStateToState speedState =
+    if speedState.speed < 0 then
         Stopped
     else
         Free speedState
@@ -519,13 +534,13 @@ angleFromTouchesHistory pickerRadius currentAngle touchesHistory =
 
 
 angleFromSpeedState : Angle -> SpeedState -> Angle
-angleFromSpeedState currentAngle ( ( maybePreviousTime, lastTime ), speed ) =
-    case maybePreviousTime of
+angleFromSpeedState currentAngle speedState =
+    case speedState.previousTime of
         Nothing ->
             currentAngle
 
         Just previousTime ->
-            currentAngle + speed * (lastTime - previousTime)
+            currentAngle + speedState.direction * speedState.speed * (speedState.lastTime - previousTime)
 
 
 resolveSelect : WheelPicker -> Int

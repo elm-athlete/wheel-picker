@@ -20,14 +20,16 @@ suite =
         [ test "speedToReachAFace modifies the original speed to perfectly reach a picker face" <|
             \_ ->
                 Expect.equal
-                    0.3174901573277509
-                    (WheelPicker.speedToReachAFace
-                        { previousTime = Nothing
-                        , lastTime = 1
-                        , direction = -1
-                        , speed = 0.3
-                        }
-                        876
-                        24
-                    )
+                    ( 0.2918903903865285, 1, 936 )
+                    (WheelPicker.speedToReachAFace 865 24 0.3)
+        , test "same test with negative speed" <|
+            \_ ->
+                Expect.equal
+                    ( 0.29597297173897485, -1, 792 )
+                    (WheelPicker.speedToReachAFace 865 24 -0.3)
+        , test "same test with direction different to original speed" <|
+            \_ ->
+                Expect.equal
+                    ( 0.034641016151377546, -1, 864 )
+                    (WheelPicker.speedToReachAFace 865 24 0.1)
         ]

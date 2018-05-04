@@ -80,8 +80,9 @@ type alias Speed =
 
 type alias SpeedState =
     { startTime : Time
-    , finishTime : Time
+    , finalTime : Time
     , startAngle : Angle
+    , finalAngle : Angle
     , startSpeed : Speed
     , direction : Float
     }
@@ -224,7 +225,7 @@ updateRecordTouch mouseY touchState currentTime (WheelPicker picker) =
         StopTouching ->
             ( WheelPicker picker
                 |> setStateWhenStopTouching
-                |> updateAngle currentTime
+              --|> updateAngle currentTime
             , Cmd.none
             )
 
@@ -232,8 +233,8 @@ updateRecordTouch mouseY touchState currentTime (WheelPicker picker) =
 updateNewFrame : Time -> WheelPicker -> ( WheelPicker, Cmd Msg )
 updateNewFrame currentTime (WheelPicker picker) =
     (WheelPicker picker
-        |> setStateFromNewFrame currentTime
         |> updateAngle currentTime
+        |> setStateFromNewFrame currentTime
     )
         ! []
 
@@ -433,40 +434,54 @@ setStateFromNewFrame : Time -> WheelPicker -> WheelPicker
 setStateFromNewFrame currentTime (WheelPicker picker) =
     case picker.state of
         Free speedState ->
-            speedStateToState currentTime speedState
-                |> flip setState (WheelPicker picker)
+            if currentTime >= speedState.finalTime then
+                WheelPicker picker
+                    |> setAngle speedState.finalAngle
+                    |> setState Stopped
+            else
+                WheelPicker picker
+                    |> setState (Free speedState)
 
         _ ->
             WheelPicker picker
 
 
-speedToReachAFace : Angle -> Angle -> Speed -> ( Speed, Float )
+speedToReachAFace : Angle -> Angle -> Speed -> ( Speed, Float, Angle )
 speedToReachAFace pickerAngle pickerAngleBetweenFaces speed =
     let
+        finalAngle =
+            ((speed ^ 2) / (2 * friction))
+                |> (*) (speed / (abs speed))
+                |> (+) pickerAngle
+                |> flip (/) pickerAngleBetweenFaces
+                |> round
+                |> toFloat
+                |> (*) pickerAngleBetweenFaces
+
         direction =
-            speed / (abs speed)
+            if finalAngle >= pickerAngle then
+                1
+            else
+                -1
     in
-        ((speed ^ 2) / (2 * friction))
-            |> (*) direction
-            |> (+) pickerAngle
-            |> flip (/) pickerAngleBetweenFaces
-            |> round
-            |> toFloat
-            |> (*) pickerAngleBetweenFaces
+        ( finalAngle
             |> (-) pickerAngle
             |> abs
             |> (*) (2 * friction)
             |> sqrt
-            |> flip (,) direction
+        , direction
+        , finalAngle
+        )
 
 
 newStateFromTouchesHistory : WheelPicker -> TouchesHistory -> State
 newStateFromTouchesHistory (WheelPicker picker) touchesHistory =
     let
-        speedToSpeedState ( speed, direction ) =
+        speedToSpeedState ( speed, direction, finalAngle ) =
             { startTime = currentTime
-            , finishTime = currentTime + speed / friction
+            , finalTime = currentTime + speed / friction
             , startAngle = picker.angle
+            , finalAngle = finalAngle
             , startSpeed = speed
             , direction = direction
             }
@@ -497,14 +512,6 @@ newStateFromTouchesHistory (WheelPicker picker) touchesHistory =
             |> speedToReachAFace picker.angle (angleBetweenFaces picker.faces)
             |> speedToSpeedState
             |> Free
-
-
-speedStateToState : Time -> SpeedState -> State
-speedStateToState currentTime speedState =
-    if currentTime >= speedState.finishTime then
-        Stopped
-    else
-        Free speedState
 
 
 updateAngle : Time -> WheelPicker -> WheelPicker

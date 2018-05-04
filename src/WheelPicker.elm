@@ -8,6 +8,7 @@ module WheelPicker
         , defaultWheelPicker
         , getSelect
         , isAnimationFrameNeeded
+        , speedToReachAFace
         )
 
 import BodyBuilder as Builder exposing (Node)
@@ -221,7 +222,6 @@ updateRecordTouch mouseY touchState currentTime (WheelPicker picker) =
 
         StopTouching ->
             ( WheelPicker picker
-                |> addNewTouch ( currentTime, mouseY )
                 |> setStateWhenStopTouching
                 |> updateAngle
             , Cmd.none
@@ -421,7 +421,7 @@ setStateWhenStopTouching : WheelPicker -> WheelPicker
 setStateWhenStopTouching (WheelPicker picker) =
     case picker.state of
         Held touchesHistory ->
-            newStateFromTouchesHistory picker.radiusOut touchesHistory
+            newStateFromTouchesHistory (WheelPicker picker) touchesHistory
                 |> flip setState (WheelPicker picker)
 
         _ ->
@@ -458,11 +458,27 @@ speedStateFromNewFrame currentTime speedState =
                 newSpeedState (speedState.speed - friction * (currentTime - previousTime))
 
 
-newStateFromTouchesHistory : Int -> TouchesHistory -> State
-newStateFromTouchesHistory pickerRadius touchesHistory =
+speedToReachAFace : SpeedState -> Angle -> Angle -> Speed
+speedToReachAFace speedState pickerAngle pickerAngleBetweenFaces =
+    ((speedState.speed ^ 2) / (2 * friction))
+        |> (*) speedState.direction
+        |> (+) pickerAngle
+        |> flip (/) pickerAngleBetweenFaces
+        |> round
+        |> toFloat
+        |> (*) pickerAngleBetweenFaces
+        |> (-) pickerAngle
+        |> abs
+        |> (*) (2 * friction)
+        |> sqrt
+
+
+newStateFromTouchesHistory : WheelPicker -> TouchesHistory -> State
+newStateFromTouchesHistory (WheelPicker picker) touchesHistory =
     let
         roundSpeedState speedState =
-            speedState
+            -- F = v^2 / 2 Ia <=> v = sqrt (2 Ia F) <=> Ia = v^2 / 2 F
+            { speedState | speed = speedToReachAFace speedState picker.angle (angleBetweenFaces picker.faces) }
 
         calculateSpeedState (( ( lastTime, _ ), _ ) as speedState) =
             { previousTime = Nothing
@@ -472,7 +488,7 @@ newStateFromTouchesHistory pickerRadius touchesHistory =
             }
 
         speed ( ( lastTime, lastMouseY ), ( firstTime, firstMouseY ) ) =
-            (degPerPx pickerRadius) * (firstMouseY - lastMouseY) / (lastTime - firstTime)
+            (degPerPx picker.radiusOut) * (firstMouseY - lastMouseY) / (lastTime - firstTime)
 
         touchesSample touches =
             ( touches

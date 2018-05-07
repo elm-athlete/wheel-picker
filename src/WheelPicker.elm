@@ -225,7 +225,6 @@ updateRecordTouch mouseY touchState currentTime (WheelPicker picker) =
         StopTouching ->
             ( WheelPicker picker
                 |> setStateWhenStopTouching
-              --|> updateAngle currentTime
             , Cmd.none
             )
 
@@ -250,7 +249,7 @@ update msg wheelPicker =
     let
         updateSelect ( newPicker, newCmdMsg ) =
             ( newPicker
-                |> setSelect (resolveSelect wheelPicker)
+                |> setSelect (resolveSelect newPicker)
             , newCmdMsg
             )
     in

@@ -405,15 +405,23 @@ applyLimitAngles (WheelPicker picker) =
     let
         maxAngle =
             ((List.length picker.dataList |> toFloat) - 1) * (angleBetweenFaces picker.faces)
+
+        stopIfFree =
+            case picker.state of
+                Free _ ->
+                    Stopped
+
+                _ ->
+                    picker.state
     in
         if picker.angle < 0 then
             WheelPicker picker
                 |> setAngle 0
-                |> setState Stopped
+                |> setState stopIfFree
         else if picker.angle > maxAngle then
             WheelPicker picker
                 |> setAngle maxAngle
-                |> setState Stopped
+                |> setState stopIfFree
         else
             WheelPicker picker
 
